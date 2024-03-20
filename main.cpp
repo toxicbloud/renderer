@@ -4,6 +4,8 @@
 #include <vector>
 #include <cstdio>
 
+#include <glm/glm.hpp>
+
 const TGAColor white = TGAColor(255, 255, 255, 255);
 const TGAColor red = TGAColor(255, 0, 0, 255);
 
@@ -16,6 +18,42 @@ void draw_line(TGAImage &image, int x0, int y0, int x1, int y1)
 		image.set(x, y, red);
 	}
 }
+void draw_triangle(TGAImage &image, int x0, int y0, int x1, int y1, int x2, int y2)
+{
+	draw_line(image, x0, y0, x1, y1);
+	draw_line(image, x1, y1, x2, y2);
+	draw_line(image, x2, y2, x0, y0);
+}
+
+void fill_triangle(TGAImage &image,int x0, int y0, int x1, int y1, int x2, int y2,TGAColor &color){
+	// boites englobantes
+	int minx = glm::min(x0, glm::min(x1, x2));
+	int miny = glm::min(y0, glm::min(y1, y2));
+
+	int maxx = glm::max(x0, glm::max(x1, x2));
+	int maxy = glm::max(y0, glm::max(y1, y2));
+
+	glm::mat3 m(x0, y0,1, x1, y1, 1, x2, y2, 1);
+	m = glm::inverse(m);
+
+
+	// on parcours les pixels qui sont dans la boite englobante
+	for (int x = minx; x <= maxx; x++)
+	{
+		for (int y = miny; y <= maxy; y++)
+		{
+			glm::vec3 p(x, y, 1);
+			glm::vec3 bary = m * p;
+
+			// si les coordonnées barycentriques sont positives
+			if (bary.x >= 0 && bary.y >= 0 && bary.z >= 0)
+			{
+				image.set(x, y, color);
+			}
+		}
+	}
+}
+
 struct Vertex
 {
 	float x;
@@ -77,15 +115,25 @@ int main(int argc, char **argv)
 	int half_width = image.get_width() / 2;
 	int half_height = image.get_height() / 2;
 
+	// rotate the model by 90 degrees
 	for (auto &face : faces)
 	{
 		Vertex v0 = vertices[face.v0 - 1];
 		Vertex v1 = vertices.at(face.v1 - 1);
 		Vertex v2 = vertices.at(face.v2 - 1);
 
-		draw_line(image, (v0.x + 1) * half_width, (v0.y + 1) * half_height, (v1.x + 1) * half_width, (v1.y + 1) * half_height);
-		draw_line(image, (v1.x + 1) * half_width, (v1.y + 1) * half_height, (v2.x + 1) * half_width, (v2.y + 1) * half_height);
-		draw_line(image, (v2.x + 1) * half_width, (v2.y + 1) * half_height, (v0.x + 1) * half_width, (v0.y + 1) * half_height);
+		// v0 = {v0.x, v0.z, v0.y};
+		// v1 = {v1.x, v1.z, v1.y};
+		// v2 = {v2.x, v2.z, v2.y};
+
+		// translate the model
+		
+
+		// draw_line(image, (v0.x + 1) * half_width, (v0.y + 1) * half_height, (v1.x + 1) * half_width, (v1.y + 1) * half_height);
+		// draw_line(image, (v1.x + 1) * half_width, (v1.y + 1) * half_height, (v2.x + 1) * half_width, (v2.y + 1) * half_height);
+		// draw_line(image, (v2.x + 1) * half_width, (v2.y + 1) * half_height, (v0.x + 1) * half_width, (v0.y + 1) * half_height);
+		TGAColor randomcolor = TGAColor(rand() % 255, rand() % 255, rand() % 255, 255);
+		fill_triangle(image, (v0.x + 1) * half_width, (v0.y + 1) * half_height, (v1.x + 1) * half_width, (v1.y + 1) * half_height, (v2.x + 1) * half_width, (v2.y + 1) * half_height,randomcolor);
 	}
 	image.flip_vertically(); // i want to have the origin at the left bottom corner of the image
 	image.write_tga_file("output.tga");
