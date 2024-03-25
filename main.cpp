@@ -65,6 +65,8 @@ struct Face
 	int v0;
 	int v1;
 	int v2;
+	int vt0, vt1, vt2;
+	int vn0, vn1, vn2;
 };
 
 int main(int argc, char **argv)
@@ -79,6 +81,8 @@ int main(int argc, char **argv)
 	std::string line;
 	std::vector<Vertex> vertices;
 	std::vector<Face> faces;
+	std::vector<glm::vec3> normals;
+	std::vector<glm::vec3> textures;
 	while (getline(objfile, line))
 	{
 		std::istringstream iss(line.c_str());
@@ -92,11 +96,29 @@ int main(int argc, char **argv)
 			iss >> vertex.z;
 			vertices.push_back(vertex);
 		}
+		else if (!line.compare(0, 3, "vt "))
+		{
+			glm::vec3 texture;
+			iss >> v;
+			iss >> texture.x;
+			iss >> texture.y;
+			iss >> texture.z;
+			textures.push_back(texture);
+		}
+		else if (!line.compare(0, 3, "vn "))
+		{
+			glm::vec3 normal;
+			iss >> v;
+			iss >> normal.x;
+			iss >> normal.y;
+			iss >> normal.z;
+			normals.push_back(normal);
+		}
 		else if (!line.compare(0, 2, "f "))
 		{
 			// f 1210/1260/1210 1090/1259/1090 1212/1277/1212
 			Face face;
-			sscanf(line.c_str(), "f %d/%*d/%*d %d/%*d/%*d %d/%*d/%*d", &face.v0, &face.v1, &face.v2);
+			sscanf(line.c_str(), "f %d/%d/%d %d/%d/%d %d/%d/%d", &face.v0, &face.vt0, &face.vn0, &face.v1, &face.vt1, &face.vn1, &face.v2, &face.vt2, &face.vn2);
 			faces.push_back(face);
 		}
 	}
@@ -122,16 +144,18 @@ int main(int argc, char **argv)
 		Vertex v1 = vertices.at(face.v1 - 1);
 		Vertex v2 = vertices.at(face.v2 - 1);
 
+		//backface culling
+		glm::vec3 u = {v1.x - v0.x, v1.y - v0.y, v1.z - v0.z};
+		glm::vec3 v = {v2.x - v0.x, v2.y - v0.y, v2.z - v0.z};
+		glm::vec3 normal = glm::cross(u, v);
+		if (normal.z < 0)
+		{
+			continue;
+		}
+
 		// v0 = {v0.x, v0.z, v0.y};
 		// v1 = {v1.x, v1.z, v1.y};
 		// v2 = {v2.x, v2.z, v2.y};
-
-		// translate the model
-		
-
-		// draw_line(image, (v0.x + 1) * half_width, (v0.y + 1) * half_height, (v1.x + 1) * half_width, (v1.y + 1) * half_height);
-		// draw_line(image, (v1.x + 1) * half_width, (v1.y + 1) * half_height, (v2.x + 1) * half_width, (v2.y + 1) * half_height);
-		// draw_line(image, (v2.x + 1) * half_width, (v2.y + 1) * half_height, (v0.x + 1) * half_width, (v0.y + 1) * half_height);
 		TGAColor randomcolor = TGAColor(rand() % 255, rand() % 255, rand() % 255, 255);
 		fill_triangle(image, (v0.x + 1) * half_width, (v0.y + 1) * half_height, (v1.x + 1) * half_width, (v1.y + 1) * half_height, (v2.x + 1) * half_width, (v2.y + 1) * half_height,randomcolor);
 	}
