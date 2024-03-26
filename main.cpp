@@ -6,8 +6,12 @@
 
 #include <glm/glm.hpp>
 
+#define WIDTH 500
+#define HEIGHT 500
+
 const TGAColor white = TGAColor(255, 255, 255, 255);
 const TGAColor red = TGAColor(255, 0, 0, 255);
+int *zbuffer;
 
 void draw_line(TGAImage &image, int x0, int y0, int x1, int y1)
 {
@@ -48,7 +52,11 @@ void fill_triangle(TGAImage &image,int x0, int y0, int x1, int y1, int x2, int y
 			// si les coordonnées barycentriques sont positives
 			if (bary.x >= 0 && bary.y >= 0 && bary.z >= 0)
 			{
-				image.set(x, y, color);
+				if (zbuffer[int(p.x + p.y * WIDTH)] < p.z)
+				{
+					zbuffer[int(p.x + p.y * WIDTH)] = p.z;
+					image.set(p.x, p.y, color);
+				}
 			}
 		}
 	}
@@ -71,7 +79,8 @@ struct Face
 
 int main(int argc, char **argv)
 {
-	TGAImage image(500, 500, TGAImage::RGB);
+	TGAImage image(WIDTH, HEIGHT, TGAImage::RGB);
+	zbuffer = new int[WIDTH*HEIGHT];
 	std::fstream objfile;
 	objfile.open("obj/african_head/african_head.obj");
 	if (!objfile.is_open())
@@ -143,7 +152,6 @@ int main(int argc, char **argv)
 		Vertex v0 = vertices[face.v0 - 1];
 		Vertex v1 = vertices.at(face.v1 - 1);
 		Vertex v2 = vertices.at(face.v2 - 1);
-
 		//backface culling
 		glm::vec3 u = {v1.x - v0.x, v1.y - v0.y, v1.z - v0.z};
 		glm::vec3 v = {v2.x - v0.x, v2.y - v0.y, v2.z - v0.z};
