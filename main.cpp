@@ -14,7 +14,7 @@
 
 const TGAColor white = TGAColor(255, 255, 255, 255);
 const TGAColor red = TGAColor(255, 0, 0, 255);
-int *zbuffer;
+float *zbuffer;
 
 void draw_line(TGAImage &image, int x0, int y0, int x1, int y1)
 {
@@ -69,6 +69,7 @@ void fill_triangle(TGAImage &image, glm::vec3 *pts, TGAColor &color, TGAImage di
 				// texColor.g *= intensity;
 				// texColor.b *= intensity;
 				// update Z
+				p.z = pts[0].z * bary.x + pts[1].z * bary.y + pts[2].z * bary.z;
 				if (zbuffer[int(p.x + p.y * WIDTH)] < p.z)
 				{
 					zbuffer[int(p.x + p.y * WIDTH)] = p.z;
@@ -99,8 +100,12 @@ int main(int argc, char **argv)
 	{
 		std::cout << "Diffuse texture load successfully" << std::endl;
 	}
-
-	zbuffer = new int[WIDTH*HEIGHT];
+	// initialize to lowest possible value
+	zbuffer = new float[WIDTH*HEIGHT];
+	for (int i = 0; i < WIDTH*HEIGHT; i++)
+	{
+		zbuffer[i] = -std::numeric_limits<float>::max();
+	}
 	std::fstream objfile;
 	objfile.open("obj/african_head/african_head.obj");
 	if (!objfile.is_open())
