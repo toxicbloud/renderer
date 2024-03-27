@@ -29,7 +29,8 @@ void draw_triangle(TGAImage &image, int x0, int y0, int x1, int y1, int x2, int 
 	draw_line(image, x2, y2, x0, y0);
 }
 
-void fill_triangle(TGAImage &image,int x0, int y0, int x1, int y1, int x2, int y2,TGAColor &color){
+void fill_triangle(TGAImage &image, int x0, int y0, int x1, int y1, int x2, int y2, TGAColor &color, TGAImage diffuse, glm::vec3 vt0, glm::vec3 vt1, glm::vec3 vt2)
+{
 	// boites englobantes
 	int minx = glm::min(x0, glm::min(x1, x2));
 	int miny = glm::min(y0, glm::min(y1, y2));
@@ -50,12 +51,15 @@ void fill_triangle(TGAImage &image,int x0, int y0, int x1, int y1, int x2, int y
 			glm::vec3 bary = m * p;
 
 			// si les coordonnées barycentriques sont positives
-			if (bary.x >= 0 && bary.y >= 0 && bary.z >= 0)
+			if (bary.x >= -1e-2 && bary.y >= -1e-2 && bary.z >= -1e-2)
 			{
+				glm::vec2 uv = bary.x * vt0 + bary.y * vt1 + bary.z * vt2;
+				glm::vec2 uvPixel = glm::vec2(uv.x*float(diffuse.get_width()),uv.y*float(diffuse.get_height()));
+				TGAColor texColor = diffuse.get(uvPixel.x,uvPixel.y);
 				if (zbuffer[int(p.x + p.y * WIDTH)] < p.z)
 				{
 					zbuffer[int(p.x + p.y * WIDTH)] = p.z;
-					image.set(p.x, p.y, color);
+					image.set(p.x, p.y, texColor);
 				}
 			}
 		}
@@ -80,6 +84,16 @@ struct Face
 int main(int argc, char **argv)
 {
 	TGAImage image(WIDTH, HEIGHT, TGAImage::RGB);
+	TGAImage diffuse;
+	if (!diffuse.read_tga_file("obj/african_head/african_head_diffuse.tga"))
+	{
+		std::cout << "Failed to load diffuse texture" << std::endl;
+	}
+	else
+	{
+		std::cout << "Diffuse texture load successfully" << std::endl;
+	}
+
 	zbuffer = new int[WIDTH*HEIGHT];
 	std::fstream objfile;
 	objfile.open("obj/african_head/african_head.obj");
@@ -96,6 +110,8 @@ int main(int argc, char **argv)
 	{
 		std::istringstream iss(line.c_str());
 		char v;
+		// vt trash
+		std::string trash;
 		if (!line.compare(0, 2, "v "))
 		{
 			Vertex vertex;
@@ -108,16 +124,17 @@ int main(int argc, char **argv)
 		else if (!line.compare(0, 3, "vt "))
 		{
 			glm::vec3 texture;
-			iss >> v;
+			iss >> trash;
 			iss >> texture.x;
 			iss >> texture.y;
-			iss >> texture.z;
+			texture.y = 1 - texture.y;
+			iss >> texture.z; // TRASH
 			textures.push_back(texture);
 		}
 		else if (!line.compare(0, 3, "vn "))
 		{
 			glm::vec3 normal;
-			iss >> v;
+			iss >> trash;
 			iss >> normal.x;
 			iss >> normal.y;
 			iss >> normal.z;
@@ -161,11 +178,15 @@ int main(int argc, char **argv)
 			continue;
 		}
 
+		glm::vec3 vt0 = textures[face.vt0 -1];
+		glm::vec3 vt1 = textures[face.vt1 -1];
+		glm::vec3 vt2 = textures[face.vt2 -1];
+
 		// v0 = {v0.x, v0.z, v0.y};
 		// v1 = {v1.x, v1.z, v1.y};
 		// v2 = {v2.x, v2.z, v2.y};
 		TGAColor randomcolor = TGAColor(rand() % 255, rand() % 255, rand() % 255, 255);
-		fill_triangle(image, (v0.x + 1) * half_width, (v0.y + 1) * half_height, (v1.x + 1) * half_width, (v1.y + 1) * half_height, (v2.x + 1) * half_width, (v2.y + 1) * half_height,randomcolor);
+		fill_triangle(image, (v0.x + 1) * half_width, (v0.y + 1) * half_height, (v1.x + 1) * half_width, (v1.y + 1) * half_height, (v2.x + 1) * half_width, (v2.y + 1) * half_height,randomcolor,diffuse,vt0,vt1,vt2);
 	}
 	image.flip_vertically(); // i want to have the origin at the left bottom corner of the image
 	image.write_tga_file("output.tga");
