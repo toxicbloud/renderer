@@ -8,9 +8,10 @@
 #include <glm/gtc/matrix_transform.hpp>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/rotate_vector.hpp>
+#include <glm/gtx/string_cast.hpp>
 
-#define WIDTH 4096
-#define HEIGHT 4096
+#define WIDTH 4000
+#define HEIGHT 4000
 
 const TGAColor white = TGAColor(255, 255, 255, 255);
 const TGAColor red = TGAColor(255, 0, 0, 255);
@@ -32,7 +33,7 @@ void draw_triangle(TGAImage &image, int x0, int y0, int x1, int y1, int x2, int 
 	draw_line(image, x2, y2, x0, y0);
 }
 
-void fill_triangle(TGAImage &image, glm::vec3 *pts, TGAColor &color, TGAImage diffuse, glm::vec3 vt0, glm::vec3 vt1, glm::vec3 vt2,float intensity)
+void fill_triangle(TGAImage &image, glm::vec3 *pts,glm::vec3 *vns, TGAColor &color, TGAImage diffuse, glm::vec3 vt0, glm::vec3 vt1, glm::vec3 vt2)
 {
 	for (size_t i = 0; i < 3; i++)
 	{
@@ -49,7 +50,6 @@ void fill_triangle(TGAImage &image, glm::vec3 *pts, TGAColor &color, TGAImage di
 	glm::mat3 m(pts[0].x, pts[0].y,1, pts[1].x, pts[1].y, 1, pts[2].x, pts[2].y, 1);
 	m = glm::inverse(m);
 
-
 	// on parcours les pixels qui sont dans la boite englobante
 	for (int x = minx; x <= maxx; x++)
 	{
@@ -64,14 +64,17 @@ void fill_triangle(TGAImage &image, glm::vec3 *pts, TGAColor &color, TGAImage di
 				glm::vec2 uv = bary.x * vt0 + bary.y * vt1 + bary.z * vt2;
 				glm::vec2 uvPixel = glm::vec2(uv.x*float(diffuse.get_width()),uv.y*float(diffuse.get_height()));
 				TGAColor texColor = diffuse.get(uvPixel.x,uvPixel.y);
-				// eclairage
-				// texColor.r *= intensity;
-				// texColor.g *= intensity;
-				// texColor.b *= intensity;
 				// update Z
 				p.z = pts[0].z * bary.x + pts[1].z * bary.y + pts[2].z * bary.z;
+				if((p.x +p.y*WIDTH )>= WIDTH*HEIGHT || (p.x +p.y*WIDTH )<0)
+				{
+					continue;
+				}
 				if (zbuffer[int(p.x + p.y * WIDTH)] < p.z)
 				{
+					// Smooth normal  Gouraud shading
+					glm::vec3 vn = glm::normalize(bary.x * vns[0] + bary.y * vns[1] + bary.z * vns[2]);
+					float intensity = glm::clamp(glm::dot(vn,glm::normalize(glm::vec3(0,0,1))),0.0f,1.0f);
 					zbuffer[int(p.x + p.y * WIDTH)] = p.z;
 					image.set(p.x, p.y, TGAColor (intensity*texColor.r,intensity*texColor.g,intensity*texColor.b,255));
 				}
@@ -173,7 +176,6 @@ int main(int argc, char **argv)
 
 	int half_width = image.get_width() / 2;
 	int half_height = image.get_height() / 2;
-
 	glm::vec3 light_dir(0.f,0.f,1.f);
 	// rotate the model by 90 degrees
 	for (auto &face : faces)
@@ -185,11 +187,11 @@ int main(int argc, char **argv)
 		glm::vec3 u = v1 - v0;
 		glm::vec3 v = v2 - v0;
 		glm::vec3 normal = glm::normalize(glm::cross(u,v));
-		float intensity = glm::dot(normal,glm::normalize(light_dir));
-		if(intensity < 0)
-		{
-			intensity = 0;
-		}
+
+		glm::vec3 vn0 = normals[face.vn0 -1];
+		glm::vec3 vn1 = normals[face.vn1 -1];
+		glm::vec3 vn2 = normals[face.vn2 -1];
+
 		if (normal.z < 0)
 		{
 			continue;
@@ -203,11 +205,17 @@ int main(int argc, char **argv)
 		// v1 = {v1.x, v1.z, v1.y};
 		// v2 = {v2.x, v2.z, v2.y};
 		TGAColor randomcolor = TGAColor(rand() % 255, rand() % 255, rand() % 255, 255);
-		glm::vec3 pts[3] = {v0, v1, v2};
-		fill_triangle(image,pts,randomcolor,diffuse,vt0,vt1,vt2,intensity);
+		glm::vec3 vns[3] = {vn0, vn1, vn2};
+		
+		float cameraDistance = 2.0f;
+		glm::vec3 pts[3] = {
+			glm::vec3(v0.x / (1-v0.z/cameraDistance),v0.y / (1-v0.z/cameraDistance),v0.z),
+			glm::vec3(v1.x / (1-v1.z/cameraDistance),v1.y / (1-v1.z/cameraDistance),v1.z),
+			glm::vec3(v2.x / (1-v2.z/cameraDistance),v2.y / (1-v2.z/cameraDistance),v2.z)
+		};
+		fill_triangle(image,pts,vns,randomcolor,diffuse,vt0,vt1,vt2);
 	}
-
-	image.flip_vertically(); // i want to have the origin at the left bottom corner of the image
+	image.flip_vertically();
 	image.write_tga_file("output.tga");
 	return 0;
 }
