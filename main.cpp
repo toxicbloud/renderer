@@ -76,10 +76,10 @@ void fill_triangle(TGAImage &image, glm::vec3 *pts,glm::vec3 *vns, TGAImage diff
 				{
 					// Smooth normal  Gouraud shading
 					glm::vec3 vn = glm::normalize(bary.x * vns[0] + bary.y * vns[1] + bary.z * vns[2]);
-					normalImage.set(p.x, p.y, TGAColor(vn.x*255,vn.y*255,vn.z*255,255));
 					glm::vec3 normalFromTex = glm::normalize(glm::vec3(normalColor.r,normalColor.g,normalColor.b)*2.0f - glm::vec3(1,1,1));
 					// normal mapping
 					vn = glm::normalize(vn + normalFromTex);
+					normalImage.set(p.x, p.y, TGAColor(vn.x*255,vn.y*255,vn.z*255,255));
 					glm::vec3 lightDir = glm::normalize(glm::vec3(0.5f,0.5f,0.f));
 					float intensity = glm::clamp(glm::dot(vn,glm::normalize(lightDir)),0.0f,1.0f);
 					zbuffer[int(p.x + p.y * WIDTH)] = p.z;
