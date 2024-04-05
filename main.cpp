@@ -15,6 +15,7 @@
 
 const TGAColor white = TGAColor(255, 255, 255, 255);
 const TGAColor red = TGAColor(255, 0, 0, 255);
+TGAImage normalImage(WIDTH, HEIGHT, TGAImage::RGB);
 float *zbuffer;
 
 void draw_line(TGAImage &image, int x0, int y0, int x1, int y1)
@@ -33,7 +34,7 @@ void draw_triangle(TGAImage &image, int x0, int y0, int x1, int y1, int x2, int 
 	draw_line(image, x2, y2, x0, y0);
 }
 
-void fill_triangle(TGAImage &image, glm::vec3 *pts,glm::vec3 *vns, TGAColor &color, TGAImage diffuse, glm::vec3 vt0, glm::vec3 vt1, glm::vec3 vt2)
+void fill_triangle(TGAImage &image, glm::vec3 *pts,glm::vec3 *vns, TGAImage diffuse,TGAImage normal, glm::vec3 vt0, glm::vec3 vt1, glm::vec3 vt2)
 {
 	for (size_t i = 0; i < 3; i++)
 	{
@@ -64,6 +65,7 @@ void fill_triangle(TGAImage &image, glm::vec3 *pts,glm::vec3 *vns, TGAColor &col
 				glm::vec2 uv = bary.x * vt0 + bary.y * vt1 + bary.z * vt2;
 				glm::vec2 uvPixel = glm::vec2(uv.x*float(diffuse.get_width()),uv.y*float(diffuse.get_height()));
 				TGAColor texColor = diffuse.get(uvPixel.x,uvPixel.y);
+				TGAColor normalColor = normal.get(uvPixel.x,uvPixel.y);
 				// update Z
 				p.z = pts[0].z * bary.x + pts[1].z * bary.y + pts[2].z * bary.z;
 				if((p.x +p.y*WIDTH )>= WIDTH*HEIGHT || (p.x +p.y*WIDTH )<0)
@@ -74,7 +76,12 @@ void fill_triangle(TGAImage &image, glm::vec3 *pts,glm::vec3 *vns, TGAColor &col
 				{
 					// Smooth normal  Gouraud shading
 					glm::vec3 vn = glm::normalize(bary.x * vns[0] + bary.y * vns[1] + bary.z * vns[2]);
-					float intensity = glm::clamp(glm::dot(vn,glm::normalize(glm::vec3(0,0,1))),0.0f,1.0f);
+					normalImage.set(p.x, p.y, TGAColor(vn.x*255,vn.y*255,vn.z*255,255));
+					glm::vec3 normalFromTex = glm::normalize(glm::vec3(normalColor.r,normalColor.g,normalColor.b)*2.0f - glm::vec3(1,1,1));
+					// normal mapping
+					vn = glm::normalize(vn + normalFromTex);
+					glm::vec3 lightDir = glm::normalize(glm::vec3(0.5f,0.5f,0.f));
+					float intensity = glm::clamp(glm::dot(vn,glm::normalize(lightDir)),0.0f,1.0f);
 					zbuffer[int(p.x + p.y * WIDTH)] = p.z;
 					image.set(p.x, p.y, TGAColor (intensity*texColor.r,intensity*texColor.g,intensity*texColor.b,255));
 				}
@@ -94,6 +101,7 @@ struct Face
 int main(int argc, char **argv)
 {
 	TGAImage image(WIDTH, HEIGHT, TGAImage::RGB);
+	TGAImage zbufferImage(WIDTH, HEIGHT, TGAImage::GRAYSCALE);
 	TGAImage diffuse;
 	if (!diffuse.read_tga_file("obj/african_head/african_head_diffuse.tga"))
 	{
@@ -102,6 +110,15 @@ int main(int argc, char **argv)
 	else
 	{
 		std::cout << "Diffuse texture load successfully" << std::endl;
+	}
+	TGAImage normalMap;
+	if(!normalMap.read_tga_file("obj/african_head/african_head_nm.tga"))
+	{
+		std::cout << "Failed to load normal texture" << std::endl;
+	}
+	else
+	{
+		std::cout << "Normal texture load successfully" << std::endl;
 	}
 	// initialize to lowest possible value
 	zbuffer = new float[WIDTH*HEIGHT];
@@ -176,7 +193,6 @@ int main(int argc, char **argv)
 
 	int half_width = image.get_width() / 2;
 	int half_height = image.get_height() / 2;
-	glm::vec3 light_dir(0.f,0.f,1.f);
 	// rotate the model by 90 degrees
 	for (auto &face : faces)
 	{
@@ -201,21 +217,26 @@ int main(int argc, char **argv)
 		glm::vec3 vt1 = textures[face.vt1 -1];
 		glm::vec3 vt2 = textures[face.vt2 -1];
 
-		// v0 = {v0.x, v0.z, v0.y};
-		// v1 = {v1.x, v1.z, v1.y};
-		// v2 = {v2.x, v2.z, v2.y};
-		TGAColor randomcolor = TGAColor(rand() % 255, rand() % 255, rand() % 255, 255);
 		glm::vec3 vns[3] = {vn0, vn1, vn2};
 		
-		float cameraDistance = 2.0f;
+		float cameraDistance = 1.2f;
 		glm::vec3 pts[3] = {
 			glm::vec3(v0.x / (1-v0.z/cameraDistance),v0.y / (1-v0.z/cameraDistance),v0.z),
 			glm::vec3(v1.x / (1-v1.z/cameraDistance),v1.y / (1-v1.z/cameraDistance),v1.z),
 			glm::vec3(v2.x / (1-v2.z/cameraDistance),v2.y / (1-v2.z/cameraDistance),v2.z)
 		};
-		fill_triangle(image,pts,vns,randomcolor,diffuse,vt0,vt1,vt2);
+		fill_triangle(image,pts,vns,diffuse,normalMap,vt0,vt1,vt2);
 	}
 	image.flip_vertically();
 	image.write_tga_file("output.tga");
+	// fill zbuffer image
+	for (int i = 0; i < WIDTH*HEIGHT; i++)
+	{
+		zbufferImage.set(i % WIDTH, i / WIDTH, TGAColor(zbuffer[i]*255,zbuffer[i]*255,zbuffer[i]*255,255));
+	}
+	zbufferImage.flip_vertically();
+	zbufferImage.write_tga_file("zbuffer.tga");
+	normalImage.flip_vertically();
+	normalImage.write_tga_file("normal.tga");
 	return 0;
 }
