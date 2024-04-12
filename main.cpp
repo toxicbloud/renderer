@@ -10,12 +10,15 @@
 #include <glm/gtx/rotate_vector.hpp>
 #include <glm/gtx/string_cast.hpp>
 
-#define WIDTH 1000
-#define HEIGHT 1000
+#define WIDTH 2000
+#define HEIGHT 2000
+#define DEBUG_BUFFER 1
 
 const TGAColor white = TGAColor(255, 255, 255, 255);
 const TGAColor red = TGAColor(255, 0, 0, 255);
+#if DEBUG_BUFFER
 TGAImage normalImage(WIDTH, HEIGHT, TGAImage::RGB);
+#endif
 float *zbuffer;
 
 void draw_line(TGAImage &image, int x0, int y0, int x1, int y1)
@@ -51,6 +54,7 @@ void fill_triangle(TGAImage &image, glm::vec3 *pts, glm::vec3 *vns, TGAImage dif
 	glm::mat3 m(pts[0].x, pts[0].y,1, pts[1].x, pts[1].y, 1, pts[2].x, pts[2].y, 1);
 	m = glm::inverse(m);
 
+#pragma omp parallel for
 	// on parcours les pixels qui sont dans la boite englobante
 	for (int x = minx; x <= maxx; x++)
 	{
@@ -58,6 +62,12 @@ void fill_triangle(TGAImage &image, glm::vec3 *pts, glm::vec3 *vns, TGAImage dif
 		{
 			glm::vec3 p(x, y, 1);
 			glm::vec3 bary = m * p;
+			glm::vec3 baryClip = glm::vec3(bary.x/pts[0].z,bary.y/pts[1].z,bary.z/pts[2].z);
+			// baryClip = baryClip/(baryClip.x+baryClip.y+baryClip.z);
+			baryClip = baryClip/(baryClip.x+baryClip.y+baryClip.z);
+			float fragDepth = pts[0].z * baryClip.x + pts[1].z * baryClip.y + pts[2].z * baryClip.z;
+			// float fragDepth = glm::vec3(pts[0].z,pts[1].z,pts[2].z) * baryClip;
+			// float fragDepth = glm::dot(glm::vec3(pts[0].z,pts[1].z,pts[2].z),baryClip);
 
 			// si les coordonnées barycentriques sont positives
 			if (bary.x >= -1e-2 && bary.y >= -1e-2 && bary.z >= -1e-2)
@@ -72,22 +82,34 @@ void fill_triangle(TGAImage &image, glm::vec3 *pts, glm::vec3 *vns, TGAImage dif
 				{
 					continue;
 				}
-				if (zbuffer[int(p.x + p.y * WIDTH)] < p.z)
+				if (zbuffer[int(p.x + p.y * WIDTH)] < fragDepth)
 				{
 					// Smooth normal  Gouraud shading
 					glm::vec3 vn = glm::normalize(bary.x * vns[0] + bary.y * vns[1] + bary.z * vns[2]);
 					glm::vec3 normalFromTex = glm::normalize(glm::vec3(normalColor.r,normalColor.g,normalColor.b)*2.0f - glm::vec3(1,1,1));
 					// normal mapping
 					vn = glm::normalize(vn + normalFromTex);
+					#if DEBUG_BUFFER
 					normalImage.set(p.x, p.y, TGAColor(vn.x*255,vn.y*255,vn.z*255,255));
-					glm::vec3 lightDir = glm::normalize(glm::vec3(0.5f,0.5f,0.f));
+					#endif
+					glm::vec3 lightDir = glm::normalize(glm::vec3(1,0,0.f)-glm::vec3(0,0.5f,0));
+					glm::vec3 lightDir2 = glm::normalize(glm::vec3(0,1,0.f)-glm::vec3(0,0.5f,0));
 					float intensity = glm::clamp(glm::dot(vn,glm::normalize(lightDir)),0.0f,1.0f);
+					float intensity2 = glm::clamp(glm::dot(vn,glm::normalize(lightDir2)),0.0f,1.0f);
+					intensity = glm::clamp(intensity + intensity2,0.0f,1.0f);
 					zbuffer[int(p.x + p.y * WIDTH)] = p.z;
-					// specular
+					TGAColor specColor = spec.get(uvPixel.x, uvPixel.y);
 					glm::vec3 reflect = glm::reflect(-lightDir,vn);
-					float specIntensity = glm::pow(glm::clamp(glm::dot(reflect,glm::normalize(glm::vec3(0,0,1))),0.0f,1.0f),10.0f);
-					TGAColor specColor = spec.get(uvPixel.x,uvPixel.y);
-					TGAColor finalColor = TGAColor(intensity*texColor.r + specIntensity*specColor.r,intensity*texColor.g + specIntensity*specColor.g,intensity*texColor.b + specIntensity*specColor.b,255);
+					float specIntensity = glm::pow(glm::clamp(glm::dot(reflect,glm::normalize(glm::vec3(0,0,1))),0.0f,1.0f),5.0f);
+					// float specIntensity = glm::pow(
+					// 	glm::clamp(
+					// 		glm::dot(reflect,glm::normalize(glm::vec3(0,0,1))),
+					// 		0.0f,1.0f),specColor.r);
+
+					// float specIntensity = std::pow(glm::max(-reflect.z, 0.f), 5.f + specColor.r);
+					TGAColor finalColor = TGAColor((specIntensity + intensity) * texColor.r,
+												   (specIntensity + intensity) * texColor.g,
+												   (specIntensity + intensity) * texColor.b, 255);
 					image.set(p.x, p.y, finalColor);
 				}
 			}
@@ -102,11 +124,12 @@ struct Face
 	int vt0, vt1, vt2;
 	int vn0, vn1, vn2;
 };
-
 int main(int argc, char **argv)
 {
 	TGAImage image(WIDTH, HEIGHT, TGAImage::RGB);
+	#if DEBUG_BUFFER
 	TGAImage zbufferImage(WIDTH, HEIGHT, TGAImage::GRAYSCALE);
+	#endif
 	TGAImage diffuse;
 	std::string model_name = "african_head";
 	if (!diffuse.read_tga_file(std::string("obj/"+model_name+"/"+model_name+"_diffuse.tga").c_str()))
@@ -194,57 +217,85 @@ int main(int argc, char **argv)
 			faces.push_back(face);
 		}
 	}
-	for (auto &vertex : vertices)
-	{
-		// std::cout << vertex.x << " ";
-		// std::cout << vertex.y << " ";
-		// std::cout << vertex.z << std::endl;
 
-		// image 100 x 100 , coordinates -1 to 1
-		// image.set((vertex.x + 1) * 50, (vertex.y + 1) * 50, red);
-	}
 	std::cout << vertices.size() << " vertices" << std::endl;
 	std::cout << faces.size() << " faces" << std::endl;
 
-	int half_width = image.get_width() / 2;
-	int half_height = image.get_height() / 2;
 	// rotate the model by 90 degrees
 	for (auto &face : faces)
 	{
 		glm::vec3 v0 = vertices[face.v0 - 1];
 		glm::vec3 v1 = vertices.at(face.v1 - 1);
 		glm::vec3 v2 = vertices.at(face.v2 - 1);
-		//backface culling
-		glm::vec3 u = v1 - v0;
-		glm::vec3 v = v2 - v0;
-		glm::vec3 normal = glm::normalize(glm::cross(u,v));
+		// //backface culling
+		// glm::vec3 u = v1 - v0;
+		// glm::vec3 v = v2 - v0;
+		// glm::vec3 normal = glm::normalize(glm::cross(u,v));
 
 		glm::vec3 vn0 = normals[face.vn0 -1];
 		glm::vec3 vn1 = normals[face.vn1 -1];
 		glm::vec3 vn2 = normals[face.vn2 -1];
 
-		if (normal.z < 0)
-		{
-			continue;
-		}
+		// if (normal.z < 0)
+		// {
+		// 	continue;
+		// }
 
 		glm::vec3 vt0 = textures[face.vt0 -1];
 		glm::vec3 vt1 = textures[face.vt1 -1];
 		glm::vec3 vt2 = textures[face.vt2 -1];
 
 		glm::vec3 vns[3] = {vn0, vn1, vn2};
-		
-		float cameraDistance = 1.2f;
-		glm::vec3 pts[3] = {
-			glm::vec3(v0.x / (1-v0.z/cameraDistance),v0.y / (1-v0.z/cameraDistance),v0.z),
-			glm::vec3(v1.x / (1-v1.z/cameraDistance),v1.y / (1-v1.z/cameraDistance),v1.z),
-			glm::vec3(v2.x / (1-v2.z/cameraDistance),v2.y / (1-v2.z/cameraDistance),v2.z)
+
+		glm::vec3 cameraPos = glm::vec3(0,0,2);
+		glm::mat4 view = glm::lookAt(cameraPos,
+		glm::vec3(0,0,0),
+		glm::vec3(0,1,0));
+		glm::mat4 projection = glm::perspective(glm::radians(90.0f),
+		float(WIDTH)/float(HEIGHT)
+		,0.1f,100.0f);
+		//  const float distanceToCamera = 3;
+		// glm::mat4 projection = glm::mat4 {
+		// 	1, 0, 0, 0,
+		// 	0, 1, 0, 0,
+		// 	0, 0, 1, -1.f / distanceToCamera,
+		// 	0, 0, 0, 1
+		// };
+		glm::mat4 model = glm::mat4(1.0f);
+		glm::mat4 mvp = projection * view * model;
+		glm::vec4 pts4[3] = {
+			glm::vec4(mvp * glm::vec4(v0,1.0f)),
+			glm::vec4(mvp * glm::vec4(v1,1.0f)),
+			glm::vec4(mvp * glm::vec4(v2,1.0f))
 		};
+
+		glm::vec3 pts[3] = {
+			glm::vec3(pts4[0].x / pts4[0].w,pts4[0].y / pts4[0].w,pts4[0].z / pts4[0].w),
+			glm::vec3(pts4[1].x / pts4[1].w,pts4[1].y / pts4[1].w,pts4[1].z / pts4[1].w),
+			glm::vec3(pts4[2].x / pts4[2].w,pts4[2].y / pts4[2].w,pts4[2].z / pts4[2].w)
+		};
+		// backface culling real normal in world
+		glm::vec3 u = pts[1] - pts[0];
+		glm::vec3 v = pts[2] - pts[0];
+		glm::vec3 normal = glm::normalize(glm::cross(u,v));
+		if (normal.z < 0)
+		{
+			continue;
+		}
+
+		// float cameraDistance = 2.2f;
+		// glm::vec3 pts[3] = {
+		// 	glm::vec3(v0.x / (1-v0.z/cameraDistance),v0.y / (1-v0.z/cameraDistance),v0.z),
+		// 	glm::vec3(v1.x / (1-v1.z/cameraDistance),v1.y / (1-v1.z/cameraDistance),v1.z),
+		// 	glm::vec3(v2.x / (1-v2.z/cameraDistance),v2.y / (1-v2.z/cameraDistance),v2.z)
+		// };
 		fill_triangle(image,pts,vns,diffuse,normalMap,specular,vt0,vt1,vt2);
 	}
+
 	image.flip_vertically();
 	image.write_tga_file("output.tga");
 	// fill zbuffer image
+	#if DEBUG_BUFFER
 	for (int i = 0; i < WIDTH*HEIGHT; i++)
 	{
 		zbufferImage.set(i % WIDTH, i / WIDTH, TGAColor(zbuffer[i]*255,zbuffer[i]*255,zbuffer[i]*255,255));
@@ -253,5 +304,6 @@ int main(int argc, char **argv)
 	zbufferImage.write_tga_file("zbuffer.tga");
 	normalImage.flip_vertically();
 	normalImage.write_tga_file("normal.tga");
+	#endif
 	return 0;
 }
