@@ -10,8 +10,8 @@
 #include <glm/gtx/rotate_vector.hpp>
 #include <glm/gtx/string_cast.hpp>
 
-#define WIDTH 4000
-#define HEIGHT 4000
+#define WIDTH 1000
+#define HEIGHT 1000
 
 const TGAColor white = TGAColor(255, 255, 255, 255);
 const TGAColor red = TGAColor(255, 0, 0, 255);
@@ -34,7 +34,7 @@ void draw_triangle(TGAImage &image, int x0, int y0, int x1, int y1, int x2, int 
 	draw_line(image, x2, y2, x0, y0);
 }
 
-void fill_triangle(TGAImage &image, glm::vec3 *pts,glm::vec3 *vns, TGAImage diffuse,TGAImage normal, glm::vec3 vt0, glm::vec3 vt1, glm::vec3 vt2)
+void fill_triangle(TGAImage &image, glm::vec3 *pts, glm::vec3 *vns, TGAImage diffuse, TGAImage normal, TGAImage spec, glm::vec3 vt0, glm::vec3 vt1, glm::vec3 vt2)
 {
 	for (size_t i = 0; i < 3; i++)
 	{
@@ -83,7 +83,12 @@ void fill_triangle(TGAImage &image, glm::vec3 *pts,glm::vec3 *vns, TGAImage diff
 					glm::vec3 lightDir = glm::normalize(glm::vec3(0.5f,0.5f,0.f));
 					float intensity = glm::clamp(glm::dot(vn,glm::normalize(lightDir)),0.0f,1.0f);
 					zbuffer[int(p.x + p.y * WIDTH)] = p.z;
-					image.set(p.x, p.y, TGAColor (intensity*texColor.r,intensity*texColor.g,intensity*texColor.b,255));
+					// specular
+					glm::vec3 reflect = glm::reflect(-lightDir,vn);
+					float specIntensity = glm::pow(glm::clamp(glm::dot(reflect,glm::normalize(glm::vec3(0,0,1))),0.0f,1.0f),10.0f);
+					TGAColor specColor = spec.get(uvPixel.x,uvPixel.y);
+					TGAColor finalColor = TGAColor(intensity*texColor.r + specIntensity*specColor.r,intensity*texColor.g + specIntensity*specColor.g,intensity*texColor.b + specIntensity*specColor.b,255);
+					image.set(p.x, p.y, finalColor);
 				}
 			}
 		}
@@ -103,7 +108,8 @@ int main(int argc, char **argv)
 	TGAImage image(WIDTH, HEIGHT, TGAImage::RGB);
 	TGAImage zbufferImage(WIDTH, HEIGHT, TGAImage::GRAYSCALE);
 	TGAImage diffuse;
-	if (!diffuse.read_tga_file("obj/african_head/african_head_diffuse.tga"))
+	std::string model_name = "african_head";
+	if (!diffuse.read_tga_file(std::string("obj/"+model_name+"/"+model_name+"_diffuse.tga").c_str()))
 	{
 		std::cout << "Failed to load diffuse texture" << std::endl;
 	}
@@ -112,13 +118,22 @@ int main(int argc, char **argv)
 		std::cout << "Diffuse texture load successfully" << std::endl;
 	}
 	TGAImage normalMap;
-	if(!normalMap.read_tga_file("obj/african_head/african_head_nm.tga"))
+	if(!normalMap.read_tga_file(std::string("obj/"+model_name+"/"+model_name+"_nm.tga").c_str()))
 	{
 		std::cout << "Failed to load normal texture" << std::endl;
 	}
 	else
 	{
 		std::cout << "Normal texture load successfully" << std::endl;
+	}
+	TGAImage specular;
+	if(!specular.read_tga_file(std::string("obj/"+model_name+"/"+model_name+"_spec.tga").c_str()))
+	{
+		std::cout << "Failed to load specular texture" << std::endl;
+	}
+	else
+	{
+		std::cout << "Specular texture load successfully" << std::endl;
 	}
 	// initialize to lowest possible value
 	zbuffer = new float[WIDTH*HEIGHT];
@@ -127,7 +142,7 @@ int main(int argc, char **argv)
 		zbuffer[i] = -std::numeric_limits<float>::max();
 	}
 	std::fstream objfile;
-	objfile.open("obj/african_head/african_head.obj");
+	objfile.open(std::string("obj/"+model_name+"/"+model_name+".obj").c_str());
 	if (!objfile.is_open())
 	{
 		std::cout << "error while opening obj file " << std::endl;
@@ -225,7 +240,7 @@ int main(int argc, char **argv)
 			glm::vec3(v1.x / (1-v1.z/cameraDistance),v1.y / (1-v1.z/cameraDistance),v1.z),
 			glm::vec3(v2.x / (1-v2.z/cameraDistance),v2.y / (1-v2.z/cameraDistance),v2.z)
 		};
-		fill_triangle(image,pts,vns,diffuse,normalMap,vt0,vt1,vt2);
+		fill_triangle(image,pts,vns,diffuse,normalMap,specular,vt0,vt1,vt2);
 	}
 	image.flip_vertically();
 	image.write_tga_file("output.tga");
