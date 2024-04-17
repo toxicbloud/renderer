@@ -4,6 +4,17 @@
 #include <vector>
 #include <cstdio>
 #include <algorithm>
+#include <chrono>
+#include <omp.h>
+
+#define GLM_FORCE_SSE2 // pour SSE2
+#define GLM_FORCE_SSE3 // pour SSE3
+#define GLM_FORCE_SSSE3 // pour SSSE3
+#define GLM_FORCE_SSE41 // pour SSE4.1
+#define GLM_FORCE_SSE42 // pour SSE4.2
+#define GLM_FORCE_AVX // pour AVX
+#define GLM_FORCE_AVX2 // pour AVX2
+#define GLM_FORCE_AVX512 // pour AVX-512
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -13,8 +24,10 @@
 
 #define WIDTH 2000
 #define HEIGHT 2000
-#define DEBUG_BUFFER 1
+#define DEBUG_BUFFER 0
 #define BACKFACE_CULLING 1
+#define GENERATE_ANIMATION 0
+#define NORMAL_MAPPING 1
 
 const TGAColor white = TGAColor(255, 255, 255, 255);
 const TGAColor red = TGAColor(255, 0, 0, 255);
@@ -80,11 +93,11 @@ glm::vec3 barycentric(const glm::vec3 *pts, const glm::vec3 &P)
 	glm::vec3 bary = m * P;
 	return bary;
 }
-void fill_triangle(TGAImage &image, glm::vec3 *pts, glm::vec3 *world_pts, glm::vec3 *vns, Model &model, glm::vec3 vt0, glm::vec3 vt1, glm::vec3 vt2, glm::mat4 projection)
+void fill_triangle(TGAImage &image, glm::vec3 *pts, glm::vec3 *world_pts, glm::vec3 *vns, Model &model, glm::vec3 &vt0, glm::vec3 &vt1, glm::vec3 &vt2, glm::mat4 &projection)
 {
-	TGAImage diffuse = model.diffuse;
-	TGAImage normal = model.normal;
-	TGAImage spec = model.specular;
+	TGAImage& diffuse = model.diffuse;
+	TGAImage& normal = model.normal;
+	TGAImage& spec = model.specular;
 	for (size_t i = 0; i < 3; i++)
 	{
 		pts[i].x = (pts[i].x + 1) * WIDTH / 2;
@@ -97,14 +110,18 @@ void fill_triangle(TGAImage &image, glm::vec3 *pts, glm::vec3 *world_pts, glm::v
 	int maxx = glm::max(pts[0].x, glm::max(pts[1].x, pts[2].x));
 	int maxy = glm::max(pts[0].y, glm::max(pts[1].y, pts[2].y));
 
-#pragma omp parallel for
+	glm::mat3 m(pts[0].x, pts[0].y,1, pts[1].x, pts[1].y, 1, pts[2].x, pts[2].y, 1);
+	m = glm::inverse(m);
+
+	#pragma omp for
 	// on parcours les pixels qui sont dans la boite englobante
 	for (int x = minx; x <= maxx; x++)
 	{
 		for (int y = miny; y <= maxy; y++)
 		{
 			glm::vec3 p(x, y, 1);
-			glm::vec3 bary = barycentric(pts, p);
+			// glm::vec3 bary = barycentric(pts, p);
+			glm::vec3 bary = m * p;
 
 			// si les coordonnées barycentriques sont positives
 			if (bary.x >= -1e-2 && bary.y >= -1e-2 && bary.z >= -1e-2)
@@ -135,7 +152,9 @@ void fill_triangle(TGAImage &image, glm::vec3 *pts, glm::vec3 *world_pts, glm::v
 					glm::vec3 vn = glm::normalize(bary.x * vns[0] + bary.y * vns[1] + bary.z * vns[2]);
 					glm::vec3 normalFromTex = glm::normalize(glm::vec3(normalColor.r, normalColor.g, normalColor.b) * 2.0f - glm::vec3(1, 1, 1));
 					// normal mapping
-					vn = glm::normalize(vn + normalFromTex);
+					#if NORMAL_MAPPING
+						vn = glm::normalize(vn + normalFromTex);
+					#endif
 #if DEBUG_BUFFER
 					normalImage.set(p.x, p.y, TGAColor(vn.x * 255, vn.y * 255, vn.z * 255, 255));
 #endif
@@ -196,12 +215,6 @@ int main(int argc, char **argv)
 	{
 		std::cout << "Specular texture load successfully" << std::endl;
 	}
-	// initialize to lowest possible value
-	zbuffer = new float[WIDTH * HEIGHT];
-	for (int i = 0; i < WIDTH * HEIGHT; i++)
-	{
-		zbuffer[i] = -std::numeric_limits<float>::max();
-	}
 	std::fstream objfile;
 	objfile.open(std::string("obj/" + model_name + "/" + model_name + ".obj").c_str());
 	if (!objfile.is_open())
@@ -255,8 +268,18 @@ int main(int argc, char **argv)
 	std::cout << model3d.vertices.size() << " vertices" << std::endl;
 	std::cout << model3d.faces.size() << " faces" << std::endl;
 
+	// initialize to lowest possible value
+	zbuffer = new float[WIDTH * HEIGHT];
+	for (int i = 0; i < WIDTH * HEIGHT; i++)
+	{
+		zbuffer[i] = -std::numeric_limits<float>::max();
+	}
+	double start = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	#pragma omp parallel
 	for (auto &face : model3d.faces)
 	{
+
+
 		glm::vec3 v0 = model3d.vertices[face.v0 - 1];
 		glm::vec3 v1 = model3d.vertices.at(face.v1 - 1);
 		glm::vec3 v2 = model3d.vertices.at(face.v2 - 1);
@@ -279,7 +302,8 @@ int main(int argc, char **argv)
 		glm::mat4 projection = glm::perspective(glm::radians(90.0f),
 												float(WIDTH) / float(HEIGHT), 0.1f, 100.0f);
 		glm::mat4 model = glm::mat4(1.0f);
-
+		// rotate y axis
+		// model = glm::rotate(model, glm::radians(270.0f), glm::vec3(0.5f, 0.5f, 0.f));
 		glm::mat4 mvp = projection * view * model;
 		glm::vec4 pts4[3] = {
 			glm::vec4(mvp * glm::vec4(v0, 1.0f)),
@@ -308,11 +332,10 @@ int main(int argc, char **argv)
 			continue;
 		}
 #endif
-		TGAImage diffuse = model3d.diffuse;
-		TGAImage normalMap = model3d.normal;
-		TGAImage specular = model3d.specular;
 		fill_triangle(image, pts, world_pts, vns, model3d, vt0, vt1, vt2, projection);
 	}
+	double end = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	std::cout << "Time elapsed: " << end - start << " ms" << std::endl;
 
 	image.flip_vertically();
 	image.write_tga_file("output.tga");
