@@ -14,6 +14,7 @@
 #define GLM_FORCE_AVX // pour AVX
 #define GLM_FORCE_AVX2 // pour AVX2
 #define GLM_FORCE_AVX512 // pour AVX-512
+#define GLM_FORCE_ALIGNED // pour les types alignés
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -113,7 +114,7 @@ void fill_triangle(TGAImage &image, glm::vec3 *pts, glm::vec3 *world_pts, glm::v
 	glm::mat3 m(pts[0].x, pts[0].y,1, pts[1].x, pts[1].y, 1, pts[2].x, pts[2].y, 1);
 	m = glm::inverse(m);
 
-	#pragma omp for
+	#pragma omp for schedule(dynamic)
 	// on parcours les pixels qui sont dans la boite englobante
 	for (int x = minx; x <= maxx; x++)
 	{
@@ -171,13 +172,9 @@ void fill_triangle(TGAImage &image, glm::vec3 *pts, glm::vec3 *world_pts, glm::v
 					zbuffer[int(p.x + p.y * WIDTH)] = p.z; // ZBUFFER
 					TGAColor specColor = spec.get(uvPixel.x, uvPixel.y);
 					glm::vec3 reflect = glm::reflect(-lightDir, vn);
-					float specIntensity = glm::pow(glm::clamp(glm::dot(reflect, glm::normalize(glm::vec3(0, 0, 1))), 0.0f, 1.0f), 5.0f);
-					// float specIntensity = glm::pow(
-					// 	glm::clamp(
-					// 		glm::dot(reflect,glm::normalize(glm::vec3(0,0,1))),
-					// 		0.0f,1.0f),specColor.r);
-
-					// float specIntensity = std::pow(glm::max(-reflect.z, 0.f), 5.f + specColor.r);
+					// float specIntensity = glm::pow(glm::clamp(glm::dot(reflect, glm::normalize(glm::vec3(0, 0, 1))), 0.0f, 1.0f), 5.0f);
+			
+					float specIntensity = std::pow(glm::max(-reflect.z, 0.f), 5.f + specColor.r);
 					TGAColor finalColor = TGAColor((specIntensity + intensity) * texColor.r,
 												   (specIntensity + intensity) * texColor.g,
 												   (specIntensity + intensity) * texColor.b, 255);
@@ -310,23 +307,24 @@ int main(int argc, char **argv)
 		// rotate y axis
 		// model = glm::rotate(model, glm::radians(270.0f), glm::vec3(0.5f, 0.5f, 0.f));
 		glm::mat4 mvp = projection * view * model;
-		glm::vec4 pts4[3] = {
-			glm::vec4(mvp * glm::vec4(v0, 1.0f)),
-			glm::vec4(mvp * glm::vec4(v1, 1.0f)),
-			glm::vec4(mvp * glm::vec4(v2, 1.0f))};
+		glm::mat4x4 vertices = glm::mat4x4(
+			glm::vec4(v0, 1.0f),
+			glm::vec4(v1, 1.0f),
+			glm::vec4(v2, 1.0f),
+			glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+
+		glm::mat4x4 pts4 = mvp * vertices;
 
 		glm::vec3 pts[3] = {
-			glm::vec3(pts4[0].x / pts4[0].w, pts4[0].y / pts4[0].w, pts4[0].z / pts4[0].w),
-			glm::vec3(pts4[1].x / pts4[1].w, pts4[1].y / pts4[1].w, pts4[1].z / pts4[1].w),
-			glm::vec3(pts4[2].x / pts4[2].w, pts4[2].y / pts4[2].w, pts4[2].z / pts4[2].w)};
-		glm::vec4 world_pts4[4] = {
-			model * glm::vec4(v0, 1.0f),
-			model * glm::vec4(v1, 1.0f),
-			model * glm::vec4(v2, 1.0f)};
+			glm::vec3(pts4[0] / pts4[0].w),
+			glm::vec3(pts4[1] / pts4[1].w),
+			glm::vec3(pts4[2] / pts4[2].w)};
+		glm::mat4x4 world_pts4 = model * vertices;
+
 		glm::vec3 world_pts[3] = {
-			glm::vec3(world_pts4[0].x, world_pts4[0].y, world_pts4[0].z),
-			glm::vec3(world_pts4[1].x, world_pts4[1].y, world_pts4[1].z),
-			glm::vec3(world_pts4[2].x, world_pts4[2].y, world_pts4[2].z)};
+			glm::vec3(world_pts4[0]),
+			glm::vec3(world_pts4[1]),
+			glm::vec3(world_pts4[2])};
 		// backface culling real normal in world
 		glm::vec3 u = pts[1] - pts[0];
 		glm::vec3 v = pts[2] - pts[0];
