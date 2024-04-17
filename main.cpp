@@ -5,7 +5,6 @@
 #include <cstdio>
 #include <algorithm>
 #include <chrono>
-#include <omp.h>
 
 #define GLM_FORCE_SSE2 // pour SSE2
 #define GLM_FORCE_SSE3 // pour SSE3
