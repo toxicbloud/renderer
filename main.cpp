@@ -27,6 +27,7 @@
 #define BACKFACE_CULLING 1
 #define GENERATE_ANIMATION 0
 #define NORMAL_MAPPING 1
+#define GOURAUD_SHADING 1
 
 const TGAColor white = TGAColor(255, 255, 255, 255);
 const TGAColor red = TGAColor(255, 0, 0, 255);
@@ -147,8 +148,13 @@ void fill_triangle(TGAImage &image, glm::vec3 *pts, glm::vec3 *world_pts, glm::v
 				}
 				if (zbuffer[int(p.x + p.y * WIDTH)] < p.z)
 				{
+					#if GOURAUD_SHADING
 					// Smooth normal  Gouraud shading
 					glm::vec3 vn = glm::normalize(bary.x * vns[0] + bary.y * vns[1] + bary.z * vns[2]);
+					#else
+					// Flat normal
+					glm::vec3 vn = glm::normalize(glm::cross(world_pts[1] - world_pts[0], world_pts[2] - world_pts[0]));
+					#endif
 					glm::vec3 normalFromTex = glm::normalize(glm::vec3(normalColor.r, normalColor.g, normalColor.b) * 2.0f - glm::vec3(1, 1, 1));
 					// normal mapping
 					#if NORMAL_MAPPING
