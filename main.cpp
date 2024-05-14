@@ -227,11 +227,14 @@ void drawObjectToImage(TGAImage &image, Model &model)
 int main(int argc, char **argv)
 {
     Model model3d;
+    Model model3d2;
     Model model3d3;
     TGAImage image(WIDTH, HEIGHT, TGAImage::RGB);
     std::string model_name = "african_head";
+    std::string model_name2 = "floor";
     std::string model_name3 = "african_head_eye_inner";
     model3d.parse(model_name);
+    model3d2.parse(model_name2);
     model3d3.parse(model_name3);
 
     zbuffer = new float[WIDTH * HEIGHT];
@@ -244,6 +247,7 @@ int main(int argc, char **argv)
     double start = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     drawObjectToImage(image, model3d);
+    drawObjectToImage(image, model3d2);
     drawObjectToImage(image, model3d3);
 
     double end = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();

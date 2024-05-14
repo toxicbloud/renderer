@@ -33,3 +33,5 @@
 .vscode/settings.json
 ./main
 build/
+
+!obj/**/*.obj
