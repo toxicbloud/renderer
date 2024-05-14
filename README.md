@@ -54,6 +54,9 @@ cd ..
 ![Face](imgs/face.png)
 ![Profil](imgs/profil.png)
 
+> [!NOTE]
+> Des bloopers sont disponibles dans le dossier `bloopers`. Malheureusement, je n'ai pas tout enregistré, mais j'ai produit un effet intéressant sans le faire exprès que je réutiliserai dans un shader.
+
 ## Auteur
 | ![Toxicbloud](https://avatars.githubusercontent.com/u/34874048?v=4) |
 | :---: |
