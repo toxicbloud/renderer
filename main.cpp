@@ -30,30 +30,14 @@
 #define NORMAL_MAPPING 1
 #define GOURAUD_SHADING 1
 
+#include "Model.h"
+
 const TGAColor white = TGAColor(255, 255, 255, 255);
 const TGAColor red = TGAColor(255, 0, 0, 255);
 #if DEBUG_BUFFER
 TGAImage normalImage(WIDTH, HEIGHT, TGAImage::RGB);
 #endif
 float *zbuffer;
-
-struct Face
-{
-	int v0;
-	int v1;
-	int v2;
-	int vt0, vt1, vt2;
-	int vn0, vn1, vn2;
-};
-
-struct Model
-{
-	std::vector<glm::vec3> vertices;
-	std::vector<Face> faces;
-	std::vector<glm::vec3> normals;
-	std::vector<glm::vec3> textures;
-	TGAImage diffuse, normal, specular;
-};
 
 struct Shader
 {
@@ -132,8 +116,6 @@ void fill_triangle(TGAImage &image, glm::vec3 *pts, glm::vec3 *world_pts, glm::v
 				TGAColor texColor = diffuse.get(uvPixel.x, uvPixel.y);
 				TGAColor normalColor = normal.get(uvPixel.x, uvPixel.y);
 				// update Z
-				p.z = world_pts[0].z * bary.x + world_pts[1].z * bary.y + world_pts[2].z * bary.z;
-
 				float z_clip = world_pts[0].z * bary.x + world_pts[1].z * bary.y + world_pts[2].z * bary.z;
 
 				float z_ndc = z_clip * 2.0f - 1.0f; // Convertir à l'intervalle [-1, 1]
@@ -193,85 +175,11 @@ int main(int argc, char **argv)
 	TGAImage zbufferImage(WIDTH, HEIGHT, TGAImage::GRAYSCALE);
 #endif
 	std::string model_name = "african_head";
-	if (!model3d.diffuse.read_tga_file(std::string("obj/" + model_name + "/" + model_name + "_diffuse.tga").c_str()))
-	{
-		std::cout << "Failed to load diffuse texture" << std::endl;
-	}
-	else
-	{
-		std::cout << "Diffuse texture load successfully" << std::endl;
-	}
-	if (!model3d.normal.read_tga_file(std::string("obj/" + model_name + "/" + model_name + "_nm.tga").c_str()))
-	{
-		std::cout << "Failed to load normal texture" << std::endl;
-	}
-	else
-	{
-		std::cout << "Normal texture load successfully" << std::endl;
-	}
-	if (!model3d.specular.read_tga_file(std::string("obj/" + model_name + "/" + model_name + "_spec.tga").c_str()))
-	{
-		std::cout << "Failed to load specular texture" << std::endl;
-	}
-	else
-	{
-		std::cout << "Specular texture load successfully" << std::endl;
-	}
-	std::fstream objfile;
-	objfile.open(std::string("obj/" + model_name + "/" + model_name + ".obj").c_str());
-	if (!objfile.is_open())
-	{
-		std::cout << "error while opening obj file " << std::endl;
-	}
-	std::string line;
-	while (getline(objfile, line))
-	{
-		std::istringstream iss(line.c_str());
-		char v;
-		// vt trash
-		std::string trash;
-		if (!line.compare(0, 2, "v "))
-		{
-			glm::vec3 vertex;
-			iss >> v;
-			iss >> vertex.x;
-			iss >> vertex.y;
-			iss >> vertex.z;
-			model3d.vertices.push_back(vertex);
-		}
-		else if (!line.compare(0, 3, "vt "))
-		{
-			glm::vec3 texture;
-			iss >> trash;
-			iss >> texture.x;
-			iss >> texture.y;
-			texture.y = 1 - texture.y;
-			iss >> texture.z; // TRASH
-			model3d.textures.push_back(texture);
-		}
-		else if (!line.compare(0, 3, "vn "))
-		{
-			glm::vec3 normal;
-			iss >> trash;
-			iss >> normal.x;
-			iss >> normal.y;
-			iss >> normal.z;
-			model3d.normals.push_back(normal);
-		}
-		else if (!line.compare(0, 2, "f "))
-		{
-			// f 1210/1260/1210 1090/1259/1090 1212/1277/1212
-			Face face;
-			sscanf(line.c_str(), "f %d/%d/%d %d/%d/%d %d/%d/%d", &face.v0, &face.vt0, &face.vn0, &face.v1, &face.vt1, &face.vn1, &face.v2, &face.vt2, &face.vn2);
-			model3d.faces.push_back(face);
-		}
-	}
-
-	std::cout << model3d.vertices.size() << " vertices" << std::endl;
-	std::cout << model3d.faces.size() << " faces" << std::endl;
+	model3d.parse(model_name);
 
 	// initialize to lowest possible value
 	zbuffer = new float[WIDTH * HEIGHT];
+	#pragma omp parallel for
 	for (int i = 0; i < WIDTH * HEIGHT; i++)
 	{
 		zbuffer[i] = -std::numeric_limits<float>::max();
@@ -282,17 +190,17 @@ int main(int argc, char **argv)
 	{
 
 
-		glm::vec3 v0 = model3d.vertices[face.v0 - 1];
-		glm::vec3 v1 = model3d.vertices.at(face.v1 - 1);
-		glm::vec3 v2 = model3d.vertices.at(face.v2 - 1);
+		glm::vec3& v0 = model3d.vertices[face.v0 - 1];
+		glm::vec3& v1 = model3d.vertices.at(face.v1 - 1);
+		glm::vec3& v2 = model3d.vertices.at(face.v2 - 1);
 
-		glm::vec3 vn0 = model3d.normals[face.vn0 - 1];
-		glm::vec3 vn1 = model3d.normals[face.vn1 - 1];
-		glm::vec3 vn2 = model3d.normals[face.vn2 - 1];
+		glm::vec3& vn0 = model3d.normals[face.vn0 - 1];
+		glm::vec3& vn1 = model3d.normals[face.vn1 - 1];
+		glm::vec3& vn2 = model3d.normals[face.vn2 - 1];
 
-		glm::vec3 vt0 = model3d.textures[face.vt0 - 1];
-		glm::vec3 vt1 = model3d.textures[face.vt1 - 1];
-		glm::vec3 vt2 = model3d.textures[face.vt2 - 1];
+		glm::vec3& vt0 = model3d.textures[face.vt0 - 1];
+		glm::vec3& vt1 = model3d.textures[face.vt1 - 1];
+		glm::vec3& vt2 = model3d.textures[face.vt2 - 1];
 
 		glm::vec3 vns[3] = {vn0, vn1, vn2};
 
